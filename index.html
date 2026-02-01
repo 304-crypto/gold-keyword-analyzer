@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -126,8 +127,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         /* Controls */
@@ -381,12 +387,14 @@
                 font-size: 0.85rem;
             }
 
-            th, td {
+            th,
+            td {
                 padding: 10px;
             }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -468,60 +476,40 @@
         let currentSort = { field: 'goldenIndex', ascending: false };
         let categoryFilters = { '좋음': true, '황금': true, '검증필요': true };
 
-        // Web Worker code (inline)
+        // Web Worker code (inline) - only for calculations
         const workerCode = `
             self.onmessage = function(e) {
-                const { xmlText } = e.data;
+                const { rawData } = e.data;
                 
                 try {
-                    const processedData = parseAndProcess(xmlText);
+                    const processedData = processData(rawData);
                     self.postMessage({ success: true, data: processedData });
                 } catch (error) {
                     self.postMessage({ success: false, error: error.message });
                 }
             };
 
-            function parseAndProcess(xmlText) {
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-                
-                const worksheets = xmlDoc.getElementsByTagName('Worksheet');
+            function processData(rawData) {
                 const allData = [];
-                let isFirstWorksheet = true;
                 
-                for (let ws of worksheets) {
-                    const rows = ws.getElementsByTagName('Row');
+                for (let item of rawData) {
+                    // 황금지수 계산
+                    const goldenIndex = calculateGoldenIndex(item.publishTotal, item.pc, item.mobile);
                     
-                    // 모든 시트에서 1행은 헤더로 간주, 2행부터 데이터
-                    for (let i = 1; i < rows.length; i++) {
-                        const cells = rows[i].getElementsByTagName('Cell');
-                        if (cells.length >= 4) {
-                            const keyword = cells[0]?.getElementsByTagName('Data')[0]?.textContent || '';
-                            const publishTotal = cells[1]?.getElementsByTagName('Data')[0]?.textContent || '';
-                            const pc = cells[2]?.getElementsByTagName('Data')[0]?.textContent || '';
-                            const mobile = cells[3]?.getElementsByTagName('Data')[0]?.textContent || '';
-                            
-                            // 황금지수 계산
-                            const goldenIndex = calculateGoldenIndex(publishTotal, pc, mobile);
-                            
-                            // 분류
-                            const category = categorize(goldenIndex);
-                            
-                            // 버림, 비추천, null 제거
-                            if (category && category !== '버림' && category !== '비추천') {
-                                allData.push({
-                                    keyword,
-                                    publishTotal: parseValue(publishTotal) || 0,
-                                    pc: parseValue(pc) || 0,
-                                    mobile: parseValue(mobile) || 0,
-                                    goldenIndex,
-                                    category
-                                });
-                            }
-                        }
+                    // 분류
+                    const category = categorize(goldenIndex);
+                    
+                    // 버림, 비추천, null 제거
+                    if (category && category !== '버림' && category !== '비추천') {
+                        allData.push({
+                            keyword: item.keyword,
+                            publishTotal: parseValue(item.publishTotal) || 0,
+                            pc: parseValue(item.pc) || 0,
+                            mobile: parseValue(item.mobile) || 0,
+                            goldenIndex,
+                            category
+                        });
                     }
-                    
-                    isFirstWorksheet = false;
                 }
                 
                 return allData;
@@ -610,7 +598,7 @@
         });
 
         // Worker message handler
-        worker.onmessage = function(e) {
+        worker.onmessage = function (e) {
             if (e.data.success) {
                 allData = e.data.data;
                 loading.classList.remove('active');
@@ -656,18 +644,47 @@
             loading.classList.add('active');
 
             try {
-                let combinedXML = '';
-                
+                const rawData = [];
+
                 for (const file of files) {
                     const text = await file.text();
-                    combinedXML += text + '\n';
+                    const parsed = parseSpreadsheetML(text);
+                    rawData.push(...parsed);
                 }
 
-                worker.postMessage({ xmlText: combinedXML });
+                // Send to worker for calculations
+                worker.postMessage({ rawData });
             } catch (error) {
                 loading.classList.remove('active');
                 alert('파일 읽기 오류: ' + error.message);
             }
+        }
+
+        function parseSpreadsheetML(xmlText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+            const worksheets = xmlDoc.getElementsByTagName('Worksheet');
+            const allData = [];
+
+            for (let ws of worksheets) {
+                const rows = ws.getElementsByTagName('Row');
+
+                // 모든 시트에서 1행은 헤더로 간주, 2행부터 데이터
+                for (let i = 1; i < rows.length; i++) {
+                    const cells = rows[i].getElementsByTagName('Cell');
+                    if (cells.length >= 4) {
+                        const keyword = cells[0]?.getElementsByTagName('Data')[0]?.textContent || '';
+                        const publishTotal = cells[1]?.getElementsByTagName('Data')[0]?.textContent || '';
+                        const pc = cells[2]?.getElementsByTagName('Data')[0]?.textContent || '';
+                        const mobile = cells[3]?.getElementsByTagName('Data')[0]?.textContent || '';
+
+                        allData.push({ keyword, publishTotal, pc, mobile });
+                    }
+                }
+            }
+
+            return allData;
         }
 
         function applyFiltersAndSort() {
@@ -700,7 +717,7 @@
             filteredData.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.className = `category-${item.category}`;
-                
+
                 tr.innerHTML = `
                     <td>${item.keyword}</td>
                     <td>${item.publishTotal.toLocaleString()}</td>
@@ -709,7 +726,7 @@
                     <td>${item.goldenIndex.toFixed(2)}</td>
                     <td><span class="category-badge">${item.category}</span></td>
                 `;
-                
+
                 tableBody.appendChild(tr);
             });
         }
@@ -729,7 +746,7 @@
             document.querySelectorAll('th[data-sort]').forEach(th => {
                 const icon = th.querySelector('.sort-icon');
                 th.classList.remove('sorted');
-                
+
                 if (th.dataset.sort === currentSort.field) {
                     th.classList.add('sorted');
                     icon.textContent = currentSort.ascending ? '↑' : '↓';
@@ -768,11 +785,12 @@
             stats.classList.remove('active');
             tableContainer.classList.remove('active');
             fileInput.value = '';
-            
+
             // Reset filters
             categoryFilters = { '좋음': true, '황금': true, '검증필요': true };
             document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.add('active'));
         }
     </script>
 </body>
+
 </html>
