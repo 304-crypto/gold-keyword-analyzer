@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>키워드 황금지수 분석기</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #16213e;
+            --accent-gold: #ffd700;
+            --accent-blue: #4a9eff;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --border-color: #2a2a3e;
+            --category-good: #f5f5f5;
+            --category-golden: #fff4cc;
+            --category-verify: #ffcccc;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--accent-gold), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            background: var(--bg-tertiary);
+            border: 3px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 60px 20px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-zone:hover,
+        .upload-zone.drag-over {
+            border-color: var(--accent-blue);
+            background: rgba(74, 158, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.7;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* Loading Indicator */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--accent-blue);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Controls */
+        .controls {
+            display: none;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: var(--shadow);
+        }
+
+        .controls.active {
+            display: block;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: var(--accent-gold);
+        }
+
+        .toggle-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .toggle-btn {
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        .toggle-btn:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+        }
+
+        .toggle-btn.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px rgba(74, 158, 255, 0.3);
+        }
+
+        .btn:hover {
+            background: #3a8eef;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(74, 158, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-primary);
+            border-color: var(--accent-gold);
+        }
+
+        /* Stats */
+        .stats {
+            display: none;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stats.active {
+            display: grid;
+        }
+
+        .stat-card {
+            background: var(--bg-tertiary);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--accent-gold);
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Table Container */
+        .table-container {
+            display: none;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+
+        .table-container.active {
+            display: block;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 600px;
+            position: relative;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--bg-primary);
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--accent-gold);
+            border-bottom: 2px solid var(--border-color);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease;
+        }
+
+        th:hover {
+            background: rgba(74, 158, 255, 0.1);
+        }
+
+        th .sort-icon {
+            margin-left: 5px;
+            opacity: 0.5;
+        }
+
+        th.sorted .sort-icon {
+            opacity: 1;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        tr {
+            transition: background 0.2s ease;
+        }
+
+        tbody tr:hover {
+            background: rgba(74, 158, 255, 0.05);
+        }
+
+        /* Category Colors */
+        .category-좋음 {
+            background: var(--category-good) !important;
+            color: #333;
+        }
+
+        .category-황금 {
+            background: var(--category-golden) !important;
+            color: #333;
+        }
+
+        .category-검증필요 {
+            background: var(--category-verify) !important;
+            color: #333;
+        }
+
+        .category-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .category-좋음 .category-badge {
+            background: #666;
+            color: white;
+        }
+
+        .category-황금 .category-badge {
+            background: #d4af37;
+            color: white;
+        }
+
+        .category-검증필요 .category-badge {
+            background: #d32f2f;
+            color: white;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .toggle-buttons {
+                flex-direction: column;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            table {
+                font-size: 0.85rem;
+            }
+
+            th, td {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 키워드 황금지수 분석기</h1>
+            <p class="subtitle">XML 파일을 업로드하여 황금 키워드를 찾아보세요</p>
+        </header>
+
+        <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">XML 파일을 드래그하거나 클릭하여 업로드</div>
+            <div class="upload-hint">SpreadsheetML (Excel 2003 XML) 형식 지원 | 최대 300개 탭</div>
+            <input type="file" id="fileInput" accept=".xml" multiple>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>데이터 처리 중...</div>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalCount">0</div>
+                <div class="stat-label">전체 키워드</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="goodCount">0</div>
+                <div class="stat-label">좋음 (3~7)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="goldenCount">0</div>
+                <div class="stat-label">황금 (7~15)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="verifyCount">0</div>
+                <div class="stat-label">검증필요 (15+)</div>
+            </div>
+        </div>
+
+        <div class="controls" id="controls">
+            <div class="control-group">
+                <label class="control-label">카테고리 필터</label>
+                <div class="toggle-buttons">
+                    <button class="toggle-btn active" data-category="좋음">좋음 (3~7)</button>
+                    <button class="toggle-btn active" data-category="황금">황금 (7~15)</button>
+                    <button class="toggle-btn active" data-category="검증필요">검증필요 (15+)</button>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn" id="exportBtn">📥 CSV 내보내기</button>
+                <button class="btn btn-secondary" id="resetBtn">🔄 새로운 파일 업로드</button>
+            </div>
+        </div>
+
+        <div class="table-container" id="tableContainer">
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-sort="keyword">키워드 <span class="sort-icon">↕</span></th>
+                            <th data-sort="publishTotal">누적발행량 <span class="sort-icon">↕</span></th>
+                            <th data-sort="pc">PC 검색량 <span class="sort-icon">↕</span></th>
+                            <th data-sort="mobile">모바일 검색량 <span class="sort-icon">↕</span></th>
+                            <th data-sort="goldenIndex" class="sorted">황금지수 <span class="sort-icon">↓</span></th>
+                            <th data-sort="category">분류 <span class="sort-icon">↕</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let allData = [];
+        let filteredData = [];
+        let currentSort = { field: 'goldenIndex', ascending: false };
+        let categoryFilters = { '좋음': true, '황금': true, '검증필요': true };
+
+        // Web Worker code (inline)
+        const workerCode = `
+            self.onmessage = function(e) {
+                const { xmlText } = e.data;
+                
+                try {
+                    const processedData = parseAndProcess(xmlText);
+                    self.postMessage({ success: true, data: processedData });
+                } catch (error) {
+                    self.postMessage({ success: false, error: error.message });
+                }
+            };
+
+            function parseAndProcess(xmlText) {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                
+                const worksheets = xmlDoc.getElementsByTagName('Worksheet');
+                const allData = [];
+                let isFirstWorksheet = true;
+                
+                for (let ws of worksheets) {
+                    const rows = ws.getElementsByTagName('Row');
+                    
+                    // 모든 시트에서 1행은 헤더로 간주, 2행부터 데이터
+                    for (let i = 1; i < rows.length; i++) {
+                        const cells = rows[i].getElementsByTagName('Cell');
+                        if (cells.length >= 4) {
+                            const keyword = cells[0]?.getElementsByTagName('Data')[0]?.textContent || '';
+                            const publishTotal = cells[1]?.getElementsByTagName('Data')[0]?.textContent || '';
+                            const pc = cells[2]?.getElementsByTagName('Data')[0]?.textContent || '';
+                            const mobile = cells[3]?.getElementsByTagName('Data')[0]?.textContent || '';
+                            
+                            // 황금지수 계산
+                            const goldenIndex = calculateGoldenIndex(publishTotal, pc, mobile);
+                            
+                            // 분류
+                            const category = categorize(goldenIndex);
+                            
+                            // 버림, 비추천, null 제거
+                            if (category && category !== '버림' && category !== '비추천') {
+                                allData.push({
+                                    keyword,
+                                    publishTotal: parseValue(publishTotal) || 0,
+                                    pc: parseValue(pc) || 0,
+                                    mobile: parseValue(mobile) || 0,
+                                    goldenIndex,
+                                    category
+                                });
+                            }
+                        }
+                    }
+                    
+                    isFirstWorksheet = false;
+                }
+                
+                return allData;
+            }
+
+            function parseValue(str) {
+                if (!str || str.trim() === '') return null;
+                const cleaned = String(str).replace(/,/g, '').trim();
+                const num = parseFloat(cleaned);
+                return isNaN(num) ? null : num;
+            }
+
+            function calculateGoldenIndex(publishTotal, pc, mobile) {
+                try {
+                    const b = parseValue(publishTotal);
+                    const c = parseValue(pc);
+                    const d = parseValue(mobile);
+                    
+                    if (b === null || c === null || d === null || b === 0) {
+                        return null;
+                    }
+                    
+                    return (c + d) / b;
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            function categorize(index) {
+                if (index === null) return null;
+                if (index >= 0 && index < 1) return '버림';
+                if (index >= 1 && index < 3) return '비추천';
+                if (index >= 3 && index < 7) return '좋음';
+                if (index >= 7 && index < 15) return '황금';
+                return '검증필요';
+            }
+        `;
+
+        // Create Web Worker
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const worker = new Worker(URL.createObjectURL(blob));
+
+        // DOM elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const loading = document.getElementById('loading');
+        const controls = document.getElementById('controls');
+        const stats = document.getElementById('stats');
+        const tableContainer = document.getElementById('tableContainer');
+        const tableBody = document.getElementById('tableBody');
+        const exportBtn = document.getElementById('exportBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // Event listeners
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', handleDragOver);
+        uploadZone.addEventListener('dragleave', handleDragLeave);
+        uploadZone.addEventListener('drop', handleDrop);
+        fileInput.addEventListener('change', handleFileSelect);
+        exportBtn.addEventListener('click', exportToCSV);
+        resetBtn.addEventListener('click', reset);
+
+        // Category filter buttons
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const category = btn.dataset.category;
+                categoryFilters[category] = !categoryFilters[category];
+                btn.classList.toggle('active');
+                applyFiltersAndSort();
+            });
+        });
+
+        // Table header sorting
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (currentSort.field === field) {
+                    currentSort.ascending = !currentSort.ascending;
+                } else {
+                    currentSort.field = field;
+                    currentSort.ascending = false;
+                }
+                updateSortIcons();
+                applyFiltersAndSort();
+            });
+        });
+
+        // Worker message handler
+        worker.onmessage = function(e) {
+            if (e.data.success) {
+                allData = e.data.data;
+                loading.classList.remove('active');
+                controls.classList.add('active');
+                stats.classList.add('active');
+                tableContainer.classList.add('active');
+                updateStats();
+                applyFiltersAndSort();
+            } else {
+                loading.classList.remove('active');
+                alert('파일 처리 중 오류가 발생했습니다: ' + e.data.error);
+            }
+        };
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadZone.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+            const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.xml'));
+            if (files.length > 0) {
+                processFiles(files);
+            }
+        }
+
+        function handleFileSelect(e) {
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                processFiles(files);
+            }
+        }
+
+        async function processFiles(files) {
+            uploadZone.style.display = 'none';
+            loading.classList.add('active');
+
+            try {
+                let combinedXML = '';
+                
+                for (const file of files) {
+                    const text = await file.text();
+                    combinedXML += text + '\n';
+                }
+
+                worker.postMessage({ xmlText: combinedXML });
+            } catch (error) {
+                loading.classList.remove('active');
+                alert('파일 읽기 오류: ' + error.message);
+            }
+        }
+
+        function applyFiltersAndSort() {
+            // Filter by category
+            filteredData = allData.filter(item => categoryFilters[item.category]);
+
+            // Sort
+            filteredData.sort((a, b) => {
+                let aVal = a[currentSort.field];
+                let bVal = b[currentSort.field];
+
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (currentSort.ascending) {
+                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+                } else {
+                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+                }
+            });
+
+            renderTable();
+        }
+
+        function renderTable() {
+            tableBody.innerHTML = '';
+
+            filteredData.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = `category-${item.category}`;
+                
+                tr.innerHTML = `
+                    <td>${item.keyword}</td>
+                    <td>${item.publishTotal.toLocaleString()}</td>
+                    <td>${item.pc.toLocaleString()}</td>
+                    <td>${item.mobile.toLocaleString()}</td>
+                    <td>${item.goldenIndex.toFixed(2)}</td>
+                    <td><span class="category-badge">${item.category}</span></td>
+                `;
+                
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function updateStats() {
+            const good = allData.filter(d => d.category === '좋음').length;
+            const golden = allData.filter(d => d.category === '황금').length;
+            const verify = allData.filter(d => d.category === '검증필요').length;
+
+            document.getElementById('totalCount').textContent = allData.length.toLocaleString();
+            document.getElementById('goodCount').textContent = good.toLocaleString();
+            document.getElementById('goldenCount').textContent = golden.toLocaleString();
+            document.getElementById('verifyCount').textContent = verify.toLocaleString();
+        }
+
+        function updateSortIcons() {
+            document.querySelectorAll('th[data-sort]').forEach(th => {
+                const icon = th.querySelector('.sort-icon');
+                th.classList.remove('sorted');
+                
+                if (th.dataset.sort === currentSort.field) {
+                    th.classList.add('sorted');
+                    icon.textContent = currentSort.ascending ? '↑' : '↓';
+                } else {
+                    icon.textContent = '↕';
+                }
+            });
+        }
+
+        function exportToCSV() {
+            const headers = ['키워드', '누적발행량', 'PC검색량', '모바일검색량', '황금지수', '분류'];
+            const rows = filteredData.map(item => [
+                item.keyword,
+                item.publishTotal,
+                item.pc,
+                item.mobile,
+                item.goldenIndex.toFixed(2),
+                item.category
+            ]);
+
+            let csv = headers.join(',') + '\n';
+            csv += rows.map(row => row.join(',')).join('\n');
+
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `키워드분석_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+        }
+
+        function reset() {
+            allData = [];
+            filteredData = [];
+            uploadZone.style.display = 'block';
+            controls.classList.remove('active');
+            stats.classList.remove('active');
+            tableContainer.classList.remove('active');
+            fileInput.value = '';
+            
+            // Reset filters
+            categoryFilters = { '좋음': true, '황금': true, '검증필요': true };
+            document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.add('active'));
+        }
+    </script>
+</body>
+</html>
