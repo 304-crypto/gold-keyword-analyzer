@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>키워드 황금지수 분석기</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💝</text></svg>">
+
     <style>
         * {
             margin: 0;
@@ -134,6 +136,28 @@
             100% {
                 transform: rotate(360deg);
             }
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-gold));
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            margin-top: 10px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
 
         /* Controls */
@@ -399,19 +423,23 @@
     <div class="container">
         <header>
             <h1>🔍 키워드 황금지수 분석기</h1>
-            <p class="subtitle">XML 파일을 업로드하여 황금 키워드를 찾아보세요</p>
+            <p class="subtitle">CSV/TXT 또는 XML 파일을 업로드하여 황금 키워드를 찾아보세요</p>
         </header>
 
         <div class="upload-zone" id="uploadZone">
             <div class="upload-icon">📁</div>
-            <div class="upload-text">XML 파일을 드래그하거나 클릭하여 업로드</div>
-            <div class="upload-hint">SpreadsheetML (Excel 2003 XML) 형식 지원 | 최대 300개 탭</div>
-            <input type="file" id="fileInput" accept=".xml" multiple>
+            <div class="upload-text">파일을 드래그하거나 클릭하여 업로드</div>
+            <div class="upload-hint">CSV/TXT 또는 SpreadsheetML (Excel 2003 XML) 형식 지원 | 무제한 행 처리</div>
+            <input type="file" id="fileInput" accept=".txt,.csv,.xml" multiple>
         </div>
 
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <div>데이터 처리 중...</div>
+            <div id="loadingText">데이터 처리 중...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">0%</div>
         </div>
 
         <div class="stats" id="stats">
@@ -444,13 +472,14 @@
             </div>
 
             <div class="action-buttons">
-                <button class="btn" id="exportBtn">📥 CSV 내보내기</button>
+                <button class="btn" id="exportCsvBtn">📥 CSV 내보내기</button>
+                <button class="btn" id="exportXlsxBtn">📊 XLSX 내보내기</button>
                 <button class="btn btn-secondary" id="resetBtn">🔄 새로운 파일 업로드</button>
             </div>
         </div>
 
         <div class="table-container" id="tableContainer">
-            <div class="table-wrapper">
+            <div class="table-wrapper" id="tableWrapper">
                 <table>
                     <thead>
                         <tr>
@@ -475,8 +504,9 @@
         let filteredData = [];
         let currentSort = { field: 'goldenIndex', ascending: false };
         let categoryFilters = { '좋음': true, '황금': true, '검증필요': true };
+        let virtualScroller = null;
 
-        // Web Worker code (inline) - only for calculations
+        // Web Worker code (inline)
         const workerCode = `
             self.onmessage = function(e) {
                 const { rawData } = e.data;
@@ -491,15 +521,18 @@
 
             function processData(rawData) {
                 const allData = [];
+                const batchSize = 1000;
                 
-                for (let item of rawData) {
+                for (let i = 0; i < rawData.length; i++) {
+                    const item = rawData[i];
+                    
                     // 황금지수 계산
                     const goldenIndex = calculateGoldenIndex(item.publishTotal, item.pc, item.mobile);
                     
                     // 분류
                     const category = categorize(goldenIndex);
                     
-                    // 버림, 비추천, null 제거
+                    // 버림, 비추천, null 즉시 제거
                     if (category && category !== '버림' && category !== '비추천') {
                         allData.push({
                             keyword: item.keyword,
@@ -507,8 +540,15 @@
                             pc: parseValue(item.pc) || 0,
                             mobile: parseValue(item.mobile) || 0,
                             goldenIndex,
-                            category
+                            category,
+                            competitionLevel: item.competitionLevel || '' // 표시용만
                         });
+                    }
+                    
+                    // 진행률 보고
+                    if (i % batchSize === 0 && i > 0) {
+                        const percent = Math.floor((i / rawData.length) * 100);
+                        self.postMessage({ type: 'progress', percent, processed: i, total: rawData.length });
                     }
                 }
                 
@@ -552,15 +592,107 @@
         const blob = new Blob([workerCode], { type: 'application/javascript' });
         const worker = new Worker(URL.createObjectURL(blob));
 
+        // Virtual Scroller Class
+        class VirtualScroller {
+            constructor(tableBody, tableWrapper, data) {
+                this.tbody = tableBody;
+                this.wrapper = tableWrapper;
+                this.data = data;
+                this.rowHeight = 45;
+                this.visibleCount = 50;
+                this.startIndex = 0;
+                this.scrollTimeout = null;
+
+                this.init();
+            }
+
+            init() {
+                // 스크롤 이벤트 리스너
+                this.wrapper.addEventListener('scroll', () => this.onScroll());
+                this.render();
+            }
+
+            onScroll() {
+                // 디바운싱
+                if (this.scrollTimeout) {
+                    clearTimeout(this.scrollTimeout);
+                }
+
+                this.scrollTimeout = setTimeout(() => {
+                    const scrollTop = this.wrapper.scrollTop;
+                    const newStartIndex = Math.floor(scrollTop / this.rowHeight);
+
+                    if (Math.abs(newStartIndex - this.startIndex) > 5) {
+                        this.startIndex = newStartIndex;
+                        this.render();
+                    }
+                }, 50);
+            }
+
+            render() {
+                const endIndex = Math.min(
+                    this.startIndex + this.visibleCount,
+                    this.data.length
+                );
+
+                // 기존 행 제거
+                this.tbody.innerHTML = '';
+
+                // 전체 높이 설정을 위한 컨테이너
+                const totalHeight = this.data.length * this.rowHeight;
+                this.tbody.style.height = totalHeight + 'px';
+                this.tbody.style.position = 'relative';
+
+                // 가시 행 렌더링
+                for (let i = this.startIndex; i < endIndex; i++) {
+                    const item = this.data[i];
+                    const tr = document.createElement('tr');
+                    tr.className = `category-${item.category}`;
+                    tr.style.position = 'absolute';
+                    tr.style.top = (i * this.rowHeight) + 'px';
+                    tr.style.left = '0';
+                    tr.style.right = '0';
+                    tr.style.height = this.rowHeight + 'px';
+
+                    tr.innerHTML = `
+                        <td>${item.keyword}</td>
+                        <td>${item.publishTotal.toLocaleString()}</td>
+                        <td>${item.pc.toLocaleString()}</td>
+                        <td>${item.mobile.toLocaleString()}</td>
+                        <td>${item.goldenIndex.toFixed(2)}</td>
+                        <td><span class="category-badge">${item.category}</span></td>
+                    `;
+
+                    this.tbody.appendChild(tr);
+                }
+            }
+
+            updateData(newData) {
+                this.data = newData;
+                this.startIndex = 0;
+                this.wrapper.scrollTop = 0;
+                this.render();
+            }
+
+            destroy() {
+                this.wrapper.removeEventListener('scroll', this.onScroll);
+            }
+        }
+
         // DOM elements
         const uploadZone = document.getElementById('uploadZone');
         const fileInput = document.getElementById('fileInput');
         const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loadingText');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
         const controls = document.getElementById('controls');
         const stats = document.getElementById('stats');
         const tableContainer = document.getElementById('tableContainer');
         const tableBody = document.getElementById('tableBody');
-        const exportBtn = document.getElementById('exportBtn');
+        const tableWrapper = document.getElementById('tableWrapper');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportXlsxBtn = document.getElementById('exportXlsxBtn');
         const resetBtn = document.getElementById('resetBtn');
 
         // Event listeners
@@ -569,7 +701,8 @@
         uploadZone.addEventListener('dragleave', handleDragLeave);
         uploadZone.addEventListener('drop', handleDrop);
         fileInput.addEventListener('change', handleFileSelect);
-        exportBtn.addEventListener('click', exportToCSV);
+        exportCsvBtn.addEventListener('click', exportToCSV);
+        exportXlsxBtn.addEventListener('click', exportToXLSX);
         resetBtn.addEventListener('click', reset);
 
         // Category filter buttons
@@ -599,7 +732,11 @@
 
         // Worker message handler
         worker.onmessage = function (e) {
-            if (e.data.success) {
+            if (e.data.type === 'progress') {
+                // 진행률 업데이트
+                progressFill.style.width = e.data.percent + '%';
+                progressText.textContent = `${e.data.percent}% (${e.data.processed.toLocaleString()} / ${e.data.total.toLocaleString()})`;
+            } else if (e.data.success) {
                 allData = e.data.data;
                 loading.classList.remove('active');
                 controls.classList.add('active');
@@ -609,6 +746,7 @@
                 applyFiltersAndSort();
             } else {
                 loading.classList.remove('active');
+                uploadZone.style.display = 'block';
                 alert('파일 처리 중 오류가 발생했습니다: ' + e.data.error);
             }
         };
@@ -626,7 +764,7 @@
         function handleDrop(e) {
             e.preventDefault();
             uploadZone.classList.remove('drag-over');
-            const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.xml'));
+            const files = Array.from(e.dataTransfer.files);
             if (files.length > 0) {
                 processFiles(files);
             }
@@ -642,22 +780,72 @@
         async function processFiles(files) {
             uploadZone.style.display = 'none';
             loading.classList.add('active');
+            progressFill.style.width = '0%';
+            progressText.textContent = '0%';
 
             try {
                 const rawData = [];
 
                 for (const file of files) {
+                    loadingText.textContent = `파일 읽는 중: ${file.name}`;
                     const text = await file.text();
-                    const parsed = parseSpreadsheetML(text);
-                    rawData.push(...parsed);
+                    const format = detectFileFormat(text);
+
+                    if (format === 'xml') {
+                        const parsed = parseSpreadsheetML(text);
+                        rawData.push(...parsed);
+                    } else {
+                        const parsed = parseCSV(text);
+                        rawData.push(...parsed);
+                    }
                 }
+
+                loadingText.textContent = `데이터 처리 중... (총 ${rawData.length.toLocaleString()}행)`;
 
                 // Send to worker for calculations
                 worker.postMessage({ rawData });
             } catch (error) {
                 loading.classList.remove('active');
+                uploadZone.style.display = 'block';
                 alert('파일 읽기 오류: ' + error.message);
             }
+        }
+
+        function detectFileFormat(text) {
+            const header = text.substring(0, 200);
+            if (header.includes('<Workbook') || header.includes('<?xml')) {
+                return 'xml';
+            }
+            return 'csv';
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n').filter(line => line.trim());
+            if (lines.length === 0) return [];
+
+            const headers = lines[0].split(',').map(h => h.trim());
+
+            // 헤더 컬럼 인덱스 찾기
+            const keywordIdx = headers.findIndex(h => h.includes('키워드'));
+            const publishIdx = headers.findIndex(h => h.includes('누적발행량'));
+            const pcIdx = headers.findIndex(h => h.includes('PC검색'));
+            const mobileIdx = headers.findIndex(h => h.includes('모바일검색'));
+            const competitionIdx = headers.findIndex(h => h.includes('경쟁정도'));
+
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length > 0) {
+                    data.push({
+                        keyword: cols[keywordIdx]?.trim() || '',
+                        publishTotal: cols[publishIdx]?.trim() || '',
+                        pc: cols[pcIdx]?.trim() || '',
+                        mobile: cols[mobileIdx]?.trim() || '',
+                        competitionLevel: cols[competitionIdx]?.trim() || '' // 표시용만
+                    });
+                }
+            }
+            return data;
         }
 
         function parseSpreadsheetML(xmlText) {
@@ -667,7 +855,8 @@
             const worksheets = xmlDoc.getElementsByTagName('Worksheet');
             const allData = [];
 
-            for (let ws of worksheets) {
+            for (let wsIdx = 0; wsIdx < worksheets.length; wsIdx++) {
+                const ws = worksheets[wsIdx];
                 const rows = ws.getElementsByTagName('Row');
 
                 // 모든 시트에서 1행은 헤더로 간주, 2행부터 데이터
@@ -678,8 +867,15 @@
                         const publishTotal = cells[1]?.getElementsByTagName('Data')[0]?.textContent || '';
                         const pc = cells[2]?.getElementsByTagName('Data')[0]?.textContent || '';
                         const mobile = cells[3]?.getElementsByTagName('Data')[0]?.textContent || '';
+                        const competitionLevel = cells[4]?.getElementsByTagName('Data')[0]?.textContent || '';
 
-                        allData.push({ keyword, publishTotal, pc, mobile });
+                        allData.push({
+                            keyword,
+                            publishTotal,
+                            pc,
+                            mobile,
+                            competitionLevel // 표시용만
+                        });
                     }
                 }
             }
@@ -712,23 +908,11 @@
         }
 
         function renderTable() {
-            tableBody.innerHTML = '';
-
-            filteredData.forEach(item => {
-                const tr = document.createElement('tr');
-                tr.className = `category-${item.category}`;
-
-                tr.innerHTML = `
-                    <td>${item.keyword}</td>
-                    <td>${item.publishTotal.toLocaleString()}</td>
-                    <td>${item.pc.toLocaleString()}</td>
-                    <td>${item.mobile.toLocaleString()}</td>
-                    <td>${item.goldenIndex.toFixed(2)}</td>
-                    <td><span class="category-badge">${item.category}</span></td>
-                `;
-
-                tableBody.appendChild(tr);
-            });
+            if (!virtualScroller) {
+                virtualScroller = new VirtualScroller(tableBody, tableWrapper, filteredData);
+            } else {
+                virtualScroller.updateData(filteredData);
+            }
         }
 
         function updateStats() {
@@ -777,14 +961,65 @@
             link.click();
         }
 
+        function exportToXLSX() {
+            // SheetJS 라이브러리 동적 로드
+            if (!window.XLSX) {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js';
+                script.onload = () => performExport();
+                document.head.appendChild(script);
+            } else {
+                performExport();
+            }
+
+            function performExport() {
+                const ws_data = [
+                    ['키워드', '누적발행량', 'PC검색량', '모바일검색량', '황금지수', '분류']
+                ];
+
+                filteredData.forEach(item => {
+                    ws_data.push([
+                        item.keyword,
+                        item.publishTotal,
+                        item.pc,
+                        item.mobile,
+                        parseFloat(item.goldenIndex.toFixed(2)),
+                        item.category
+                    ]);
+                });
+
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+                // 컬럼 너비 설정
+                ws['!cols'] = [
+                    { wch: 30 }, // 키워드
+                    { wch: 15 }, // 누적발행량
+                    { wch: 12 }, // PC검색량
+                    { wch: 15 }, // 모바일검색량
+                    { wch: 12 }, // 황금지수
+                    { wch: 12 }  // 분류
+                ];
+
+                XLSX.utils.book_append_sheet(wb, ws, '키워드분석');
+                XLSX.writeFile(wb, `키워드분석_${new Date().toISOString().split('T')[0]}.xlsx`);
+            }
+        }
+
         function reset() {
             allData = [];
             filteredData = [];
+            if (virtualScroller) {
+                virtualScroller.destroy();
+                virtualScroller = null;
+            }
             uploadZone.style.display = 'block';
             controls.classList.remove('active');
             stats.classList.remove('active');
             tableContainer.classList.remove('active');
             fileInput.value = '';
+            progressFill.style.width = '0%';
+            progressText.textContent = '0%';
 
             // Reset filters
             categoryFilters = { '좋음': true, '황금': true, '검증필요': true };
